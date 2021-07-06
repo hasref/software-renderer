@@ -31,5 +31,10 @@
 *.out
 *.app
 
+# lsp
+compile_commands.json
+
 # dirs
 build/
+.cache/
+
