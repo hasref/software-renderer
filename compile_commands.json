@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/hasan/dev/graphics/software-renderer/build",
+  "command": "/usr/bin/c++  -I/home/hasan/dev/graphics/software-renderer/include -isystem /home/hasan/.conan/data/fmt/8.0.0/_/_/package/6557f18ca99c0b6a233f43db00e30efaa525e27e/include -Wall -Werror -Wpedantic -fsanitize=address -fsanitize=undefined -std=gnu++20 -o CMakeFiles/rend.dir/src/main.cpp.o -c /home/hasan/dev/graphics/software-renderer/src/main.cpp",
+  "file": "/home/hasan/dev/graphics/software-renderer/src/main.cpp"
+}
+]
