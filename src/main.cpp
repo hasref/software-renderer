@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -14,15 +15,105 @@
 #include "array2d.h"
 #include "canvas.h"
 #include "helpers.h"
+#include "intdefines.h"
 #include "options.h"
 #include "ray.h"
 #include "sphere.h"
 #include "vec.h"
 #include "vec_utils.h"
 
+/*
+ * For now, these classes only implement diffuse lighting.
+ *
+ */
+class Light {
+ public:
+  virtual double compute_intensity_at(const Point3& point,
+                                      const Vec3& normal) const = 0;
+  virtual ~Light() {}
+};
+
+/*
+ * Ambient light is a cheap way of
+ * not considering secondary light rays.
+ */
+class AmbientLight : public Light {
+ private:
+  double intensity{};
+
+ public:
+  explicit AmbientLight(double intensity) : intensity(intensity) {}
+
+  double compute_intensity_at(const Point3& point,
+                              const Vec3& normal) const override {
+    return intensity;
+  }
+};
+
+class PointLight : public Light {
+ private:
+  double intensity{};
+  Point3 position{};
+
+ public:
+  PointLight(double intensity, const Point3& position)
+      : intensity(intensity), position(position) {}
+
+  double compute_intensity_at(const Point3& point,
+                              const Vec3& normal) const override {
+    Vec3 direction_vector = position - point;
+    double n_dot_l = dot(direction_vector, normal);
+    if (n_dot_l < 0) {
+      return 0;
+    } else {
+      return intensity * n_dot_l / (length(normal) * length(direction_vector));
+    }
+  }
+};
+
+/* A directional light has the same direction
+ * at all points in the scene. This represents
+ * a light source which is a very large distance
+ * away (e.g. like the sun where basically get
+ * parallel light vectors).
+ */
+class DirectionalLight : public Light {
+ private:
+  double intensity{};
+  Vec3 direction{};
+
+ public:
+  DirectionalLight(double intensity, const Vec3& direction)
+      : direction(direction) {}
+
+  double compute_intensity_at(const Point3& point,
+                              const Vec3& normal) const override {
+    double n_dot_l = dot(direction, normal);
+    if (n_dot_l < 0) {
+      return 0;
+    } else {
+      return intensity * n_dot_l / (length(normal) * length(direction));
+    }
+  }
+};
+
+/*
+ * For each point in the scene, computes the total intensity
+ * of the light.
+ */
+double compute_lighting(const Vec3& point, const Vec3& normal,
+                        const std::vector<std::unique_ptr<Light>>& lights) {
+  double intensity = 0.0;
+  for (auto&& light : lights) {
+    intensity += light->compute_intensity_at(point, normal);
+  }
+  return intensity;
+}
+
 // make sure canvas_width / canvas_height is divisible by 2
 
 Color trace_ray(const Ray& ray, const std::vector<Sphere>& scene_spheres,
+                const std::vector<std::unique_ptr<Light>>& lights,
                 const SceneOptions& options) {
   /*
    * Traces ray from min_z to max_z, computes the intersection with each
@@ -59,7 +150,14 @@ Color trace_ray(const Ray& ray, const std::vector<Sphere>& scene_spheres,
   if (!closest_sphere) {
     return options.background_color;
   } else {
-    return closest_sphere.value().color;
+    //
+    Point3 point_on_surface =
+        ray.get_origin() + closest_point * ray.get_direction();
+    Vec3 surface_normal = point_on_surface - closest_sphere.value().center;
+    surface_normal = surface_normal / length(surface_normal);
+
+    return closest_sphere.value().color *
+           compute_lighting(point_on_surface, surface_normal, lights);
   }
 }
 
@@ -86,8 +184,9 @@ int main() {
   Sphere red(1, Point3{0.0, -1, 3}, Color{255, 0, 0});
   Sphere blue(1, Point3{2, 0.0, 4.0}, Color{0, 0, 255});
   Sphere green(1, Point3{-2, 0.0, 4.0}, Color{0, 255, 0});
+  Sphere large_yellow(5000, Point3{0, -5001, 0}, Color{255, 255, 0});
 
-  std::vector<Sphere> spheres{red, green, blue};
+  std::vector<Sphere> spheres{red, green, blue, large_yellow};
 
   Color white(255, 255, 255);
   options.background_color = white;
@@ -103,6 +202,16 @@ int main() {
   Canvas canvas(options.canvas_width, options.canvas_height);
   Ray ray(options.origin, Vec3{0, 0, 0});
 
+  // TODO: these need not be dynamically allocated, we could just store
+  // references to them in the vector and create them e.g.
+  // in a Scene class or just directly in main.
+  std::vector<std::unique_ptr<Light>> lights{};
+  lights.reserve(3);
+
+  lights.push_back(std::make_unique<AmbientLight>(0.2));
+  lights.push_back(std::make_unique<PointLight>(0.6, Point3{2, 1, 0}));
+  lights.push_back(std::make_unique<DirectionalLight>(0.2, Vec3{1, 4, 4}));
+
   assert((options.canvas_height % 2 == 0 && options.canvas_width % 2 == 0) &&
          "canvas width and height should be even");
 
@@ -110,7 +219,7 @@ int main() {
     for (i64 y = height_start; y < height_end; y++) {
       Vec3 ray_direction = canvas_to_viewport(x, y, options);
       ray.set_ray_direction(ray_direction);
-      Color pixel_color = trace_ray(ray, spheres, options);
+      Color pixel_color = trace_ray(ray, spheres, lights, options);
       canvas.put_pixel(x, y, pixel_color);
     }
   }
