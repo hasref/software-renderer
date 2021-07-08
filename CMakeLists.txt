@@ -6,7 +6,7 @@ conan_basic_setup(TARGETS)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_executable(rend src/main.cpp)
+add_executable(rend src/main.cpp src/canvas.cpp src/ray.cpp src/sphere.cpp )
 target_include_directories(rend PRIVATE include/)
 target_compile_options(rend PRIVATE -Wall -Werror -Wpedantic -fsanitize=address -fsanitize=undefined)
 target_compile_features(rend PRIVATE cxx_std_20)
