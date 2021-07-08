@@ -7,6 +7,10 @@
 Sphere::Sphere(double radius, const Point3& center, const Color& color)
     : radius(radius), center(center), color(color) {}
 
+Sphere::Sphere(double radius, i64 specular, const Point3& center,
+               const Color& color)
+    : radius(radius), specular(specular), center(center), color(color) {}
+
 std::pair<std::optional<double>, std::optional<double>> Sphere::intersects_with(
     const Ray& ray) const {
   /*

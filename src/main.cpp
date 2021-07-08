@@ -22,14 +22,20 @@
 #include "vec.h"
 #include "vec_utils.h"
 
+// TODO: be more consistent with what constructs need encapsulation
+// and which do not.
+//
+// TODO: consider refactoring the lighting and color calculations
+// into a scene class?
+
 /*
  * For now, these classes only implement diffuse lighting.
  *
  */
 class Light {
  public:
-  virtual double compute_intensity_at(const Point3& point,
-                                      const Vec3& normal) const = 0;
+  virtual double compute_intensity_at(const Point3& point, const Vec3& normal,
+                                      const Vec3& view, i64 specular) const = 0;
   virtual ~Light() {}
 };
 
@@ -44,8 +50,9 @@ class AmbientLight : public Light {
  public:
   explicit AmbientLight(double intensity) : intensity(intensity) {}
 
-  double compute_intensity_at(const Point3& point,
-                              const Vec3& normal) const override {
+  // this function is a victim of not fitting into the pattern.
+  double compute_intensity_at(const Point3& point, const Vec3& normal,
+                              const Vec3& view, i64 specular) const override {
     return intensity;
   }
 };
@@ -59,15 +66,30 @@ class PointLight : public Light {
   PointLight(double intensity, const Point3& position)
       : intensity(intensity), position(position) {}
 
-  double compute_intensity_at(const Point3& point,
-                              const Vec3& normal) const override {
+  double compute_intensity_at(const Point3& point, const Vec3& normal,
+                              const Vec3& view, i64 specular) const override {
+    // direction_vector == L (from book)
     Vec3 direction_vector = position - point;
     double n_dot_l = dot(direction_vector, normal);
+    double retval = 0.0;
     if (n_dot_l < 0) {
       return 0;
     } else {
-      return intensity * n_dot_l / (length(normal) * length(direction_vector));
+      retval +=
+          intensity * n_dot_l / (length(normal) * length(direction_vector));
     }
+
+    if (specular != -1) {
+      Vec3 reflected_ray = 2.0 * normal * n_dot_l - direction_vector;
+      double r_dot_v = dot(reflected_ray, view);
+      if (r_dot_v > 0) {
+        retval += intensity *
+                  std::pow(r_dot_v / (length(reflected_ray) * length(view)),
+                           specular);
+      }
+    }
+
+    return retval;
   }
 };
 
@@ -86,27 +108,47 @@ class DirectionalLight : public Light {
   DirectionalLight(double intensity, const Vec3& direction)
       : direction(direction) {}
 
-  double compute_intensity_at(const Point3& point,
-                              const Vec3& normal) const override {
+  double compute_intensity_at(const Point3& point, const Vec3& normal,
+                              const Vec3& view, i64 specular) const override {
     double n_dot_l = dot(direction, normal);
+    double retval = 0.0;
     if (n_dot_l < 0) {
       return 0;
     } else {
-      return intensity * n_dot_l / (length(normal) * length(direction));
+      retval += intensity * n_dot_l / (length(normal) * length(direction));
     }
+
+    if (specular != -1) {
+      Vec3 reflected_ray = 2.0 * normal * n_dot_l - direction;
+      double r_dot_v = dot(reflected_ray, view);
+      if (r_dot_v > 0) {
+        retval += intensity *
+                  std::pow(r_dot_v / (length(reflected_ray) * length(view)),
+                           specular);
+      }
+    }
+
+    return retval;
   }
 };
 
 /*
  * For each point in the scene, computes the total intensity
  * of the light.
+ * @param point: point to compute lighting at
+ * @param normal: surface normal at "point"
+ * @param view: vector from point "point" to the camera.
+ * @param specular: specular coefficient at point (depends on material)
+ * @param lights: vector of all lights in the scene
  */
-double compute_lighting(const Vec3& point, const Vec3& normal,
+double compute_lighting(const Vec3& point, const Vec3& normal, const Vec3& view,
+                        i64 specular,
                         const std::vector<std::unique_ptr<Light>>& lights) {
   double intensity = 0.0;
   for (auto&& light : lights) {
-    intensity += light->compute_intensity_at(point, normal);
+    intensity += light->compute_intensity_at(point, normal, view, specular);
   }
+
   return intensity;
 }
 
@@ -157,7 +199,9 @@ Color trace_ray(const Ray& ray, const std::vector<Sphere>& scene_spheres,
     surface_normal = surface_normal / length(surface_normal);
 
     return closest_sphere.value().color *
-           compute_lighting(point_on_surface, surface_normal, lights);
+           compute_lighting(point_on_surface, surface_normal,
+                            -ray.get_direction(),
+                            closest_sphere.value().specular, lights);
   }
 }
 
@@ -181,10 +225,10 @@ int main() {
   SceneOptions options;
   options.origin = {0.0, 0.0, 0.0};
 
-  Sphere red(1, Point3{0.0, -1, 3}, Color{255, 0, 0});
-  Sphere blue(1, Point3{2, 0.0, 4.0}, Color{0, 0, 255});
-  Sphere green(1, Point3{-2, 0.0, 4.0}, Color{0, 255, 0});
-  Sphere large_yellow(5000, Point3{0, -5001, 0}, Color{255, 255, 0});
+  Sphere red(1, 500, Point3{0.0, -1, 3}, Color{255, 0, 0});
+  Sphere blue(1, 500, Point3{2, 0.0, 4.0}, Color{0, 0, 255});
+  Sphere green(1, 10, Point3{-2, 0.0, 4.0}, Color{0, 255, 0});
+  Sphere large_yellow(5000, 1000, Point3{0, -5001, 0}, Color{255, 255, 0});
 
   std::vector<Sphere> spheres{red, green, blue, large_yellow};
 
