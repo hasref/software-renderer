@@ -24,18 +24,32 @@
 
 // TODO: be more consistent with what constructs need encapsulation
 // and which do not.
-//
+
 // TODO: consider refactoring the lighting and color calculations
 // into a scene class?
+
+struct SphereDoubleTuple {
+  std::optional<Sphere> sphere;
+  double t;
+};
+
+SphereDoubleTuple closest_intersection(const Ray& ray,
+                                       const std::vector<Sphere>& spheres,
+                                       double t_min,
+                                       double t_max);
 
 /*
  * For now, these classes only implement diffuse lighting.
  *
  */
+
 class Light {
  public:
-  virtual double compute_intensity_at(const Point3& point, const Vec3& normal,
-                                      const Vec3& view, i64 specular) const = 0;
+  virtual double compute_intensity_at(const Point3& point,
+                                      const Vec3& normal,
+                                      const Vec3& view,
+                                      const std::vector<Sphere>& spheres,
+                                      i64 specular) const = 0;
   virtual ~Light() {}
 };
 
@@ -51,8 +65,11 @@ class AmbientLight : public Light {
   explicit AmbientLight(double intensity) : intensity(intensity) {}
 
   // this function is a victim of not fitting into the pattern.
-  double compute_intensity_at(const Point3& point, const Vec3& normal,
-                              const Vec3& view, i64 specular) const override {
+  double compute_intensity_at(const Point3& point,
+                              const Vec3& normal,
+                              const Vec3& view,
+                              const std::vector<Sphere>& spheres,
+                              i64 specular) const override {
     return intensity;
   }
 };
@@ -66,10 +83,18 @@ class PointLight : public Light {
   PointLight(double intensity, const Point3& position)
       : intensity(intensity), position(position) {}
 
-  double compute_intensity_at(const Point3& point, const Vec3& normal,
-                              const Vec3& view, i64 specular) const override {
+  double compute_intensity_at(const Point3& point,
+                              const Vec3& normal,
+                              const Vec3& view,
+                              const std::vector<Sphere>& spheres,
+                              i64 specular) const override {
     // direction_vector == L (from book)
     Vec3 direction_vector = position - point;
+
+    if (in_shadow(point, direction_vector, spheres)) {
+      return 0.0;
+    }
+
     double n_dot_l = dot(direction_vector, normal);
     double retval = 0.0;
     if (n_dot_l < 0) {
@@ -91,6 +116,21 @@ class PointLight : public Light {
 
     return retval;
   }
+
+  bool in_shadow(const Point3& point,
+                 const Vec3& direction_vector,
+                 const std::vector<Sphere>& spheres,
+                 double t_min = 0.001,
+                 double t_max = 1) const {
+    //
+    [[maybe_unused]] const auto [closest_sphere, _] = closest_intersection(
+        Ray(point, direction_vector), spheres, t_min, t_max);
+
+    if (closest_sphere) {
+      return true;
+    }
+    return false;
+  }
 };
 
 /* A directional light has the same direction
@@ -108,9 +148,15 @@ class DirectionalLight : public Light {
   DirectionalLight(double intensity, const Vec3& direction)
       : intensity(intensity), direction(direction) {}
 
+  double compute_intensity_at(const Point3& point,
+                              const Vec3& normal,
+                              const Vec3& view,
+                              const std::vector<Sphere>& spheres,
+                              i64 specular) const override {
+    if (in_shadow(point, spheres)) {
+      return 0.0;
+    }
 
-  double compute_intensity_at(const Point3& point, const Vec3& normal,
-                              const Vec3& view, i64 specular) const override {
     double n_dot_l = dot(direction, normal);
     double retval = 0.0;
     if (n_dot_l < 0) {
@@ -131,6 +177,20 @@ class DirectionalLight : public Light {
 
     return retval;
   }
+
+  bool in_shadow(const Point3& point,
+                 const std::vector<Sphere>& spheres,
+                 double t_min = 0.001,
+                 double t_max = std::numeric_limits<double>::infinity()) const {
+    // this is a rather ugly hack to silence warnings about unused _ var
+    [[maybe_unused]] const auto [closest_sphere, _] = closest_intersection(
+        Ray(point, this->direction), spheres, t_min, t_max);
+
+    if (closest_sphere) {
+      return true;
+    }
+    return false;
+  }
 };
 
 /*
@@ -142,32 +202,33 @@ class DirectionalLight : public Light {
  * @param specular: specular coefficient at point (depends on material)
  * @param lights: vector of all lights in the scene
  */
-double compute_lighting(const Vec3& point, const Vec3& normal, const Vec3& view,
+double compute_lighting(const Vec3& point,
+                        const Vec3& normal,
+                        const Vec3& view,
                         i64 specular,
-                        const std::vector<std::unique_ptr<Light>>& lights) {
+                        const std::vector<std::unique_ptr<Light>>& lights,
+                        const std::vector<Sphere>& spheres) {
   double intensity = 0.0;
   for (auto&& light : lights) {
-    intensity += light->compute_intensity_at(point, normal, view, specular);
+    intensity +=
+        light->compute_intensity_at(point, normal, view, spheres, specular);
   }
 
   return intensity;
 }
 
-// make sure canvas_width / canvas_height is divisible by 2
-
-Color trace_ray(const Ray& ray, const std::vector<Sphere>& scene_spheres,
-                const std::vector<std::unique_ptr<Light>>& lights,
-                const SceneOptions& options) {
+SphereDoubleTuple closest_intersection(const Ray& ray,
+                                       const std::vector<Sphere>& spheres,
+                                       double t_min,
+                                       double t_max) {
   /*
    * Traces ray from min_z to max_z, computes the intersection with each
    * sphere and returns the color of the sphere closest to the min_z.
    */
-  double t_min = options.t_min;
-  double t_max = options.t_max;
   double closest_point = std::numeric_limits<double>::infinity();
   std::optional<Sphere> closest_sphere{};
 
-  for (auto&& sphere : scene_spheres) {
+  for (auto&& sphere : spheres) {
     const auto& [intersect_optional_one, intersect_optional_two] =
         sphere.intersects_with(ray);
 
@@ -190,6 +251,18 @@ Color trace_ray(const Ray& ray, const std::vector<Sphere>& scene_spheres,
     }
   }
 
+  return {closest_sphere, closest_point};
+}
+
+// make sure canvas_width / canvas_height is divisible by 2
+
+Color trace_ray(const Ray& ray,
+                const std::vector<Sphere>& scene_spheres,
+                const std::vector<std::unique_ptr<Light>>& lights,
+                const SceneOptions& options) {
+  const auto [closest_sphere, closest_point] =
+      closest_intersection(ray, scene_spheres, options.t_min, options.t_max);
+
   if (!closest_sphere) {
     return options.background_color;
   } else {
@@ -200,9 +273,12 @@ Color trace_ray(const Ray& ray, const std::vector<Sphere>& scene_spheres,
     surface_normal = surface_normal / length(surface_normal);
 
     return closest_sphere.value().color *
-           compute_lighting(point_on_surface, surface_normal,
+           compute_lighting(point_on_surface,
+                            surface_normal,
                             -ray.get_direction(),
-                            closest_sphere.value().specular, lights);
+                            closest_sphere.value().specular,
+                            lights,
+                            scene_spheres);
   }
 }
 
@@ -211,7 +287,8 @@ Color trace_ray(const Ray& ray, const std::vector<Sphere>& scene_spheres,
  * The canvas is organized so that the origin (0,0) point is in
  * the middle and not the top left.
  */
-Vec3 canvas_to_viewport(i64 canvas_x, i64 canvas_y,
+Vec3 canvas_to_viewport(i64 canvas_x,
+                        i64 canvas_y,
                         const SceneOptions& scene_options) {
   double viewport_x = (double)canvas_x * (scene_options.viewport_width /
                                           (double)scene_options.canvas_width);
