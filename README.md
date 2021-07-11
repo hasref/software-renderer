@@ -6,7 +6,7 @@ A raytracer and "renderer" written in C++, (mostly) from scratch using Gabriel G
 
 ### Obligatory Reflective Spheres
 
-[[/images/reflective.png|scene with reflective spheres]]
+![scene with reflective spheres](images/reflective.png)
 
 ## Building
 
