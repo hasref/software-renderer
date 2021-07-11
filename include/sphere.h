@@ -11,6 +11,7 @@
 struct Sphere {
   double radius = 0;
   i64 specular = -1;
+  double reflectiveness = 0.0;
   Point3 center{};
   Color color{};
 
@@ -27,9 +28,16 @@ struct Sphere {
    *
    */
   Sphere(double radius, i64 specular, const Point3& center, const Color& color);
+  Sphere(double radius,
+         i64 specular,
+         double reflectiveness,
+         const Point3& center,
+         const Color& color);
 
   using OptDoublePair = std::pair<std::optional<double>, std::optional<double>>;
   OptDoublePair intersects_with(const Ray& ray) const;
+
+  bool is_reflective() const;
 };
 
 #endif

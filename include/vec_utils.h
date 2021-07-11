@@ -73,4 +73,16 @@ inline Color& operator*=(Color& color, double scalar) {
   return color;
 }
 
+inline Color operator+(const Color& a, const Color& b) {
+  usize red = a.red + b.red;
+  usize green = a.green + b.green;
+  usize blue = a.blue + b.blue;
+
+  Color out_color{};
+  out_color.red = static_cast<u8>(std::clamp(red, usize{0}, usize{255}));
+  out_color.green = static_cast<u8>(std::clamp(green, usize{0}, usize{255}));
+  out_color.blue = static_cast<u8>(std::clamp(blue, usize{0}, usize{255}));
+  return out_color;
+}
+
 #endif

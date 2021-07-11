@@ -38,6 +38,10 @@ SphereDoubleTuple closest_intersection(const Ray& ray,
                                        double t_min,
                                        double t_max);
 
+Vec3 reflect_ray(const Vec3& ray, const Vec3& normal) {
+  return 2 * normal * dot(normal, ray) - ray;
+}
+
 /*
  * For now, these classes only implement diffuse lighting.
  *
@@ -259,12 +263,15 @@ SphereDoubleTuple closest_intersection(const Ray& ray,
 Color trace_ray(const Ray& ray,
                 const std::vector<Sphere>& scene_spheres,
                 const std::vector<std::unique_ptr<Light>>& lights,
-                const SceneOptions& options) {
+                double t_min,
+                double t_max,
+                const Color& background_color,
+                usize recursion_depth) {
   const auto [closest_sphere, closest_point] =
-      closest_intersection(ray, scene_spheres, options.t_min, options.t_max);
+      closest_intersection(ray, scene_spheres, t_min, t_max);
 
   if (!closest_sphere) {
-    return options.background_color;
+    return background_color;
   } else {
     //
     Point3 point_on_surface =
@@ -272,13 +279,34 @@ Color trace_ray(const Ray& ray,
     Vec3 surface_normal = point_on_surface - closest_sphere.value().center;
     surface_normal = surface_normal / length(surface_normal);
 
-    return closest_sphere.value().color *
-           compute_lighting(point_on_surface,
-                            surface_normal,
-                            -ray.get_direction(),
-                            closest_sphere.value().specular,
-                            lights,
-                            scene_spheres);
+    Color local_color = closest_sphere.value().color *
+                        compute_lighting(point_on_surface,
+                                         surface_normal,
+                                         -ray.get_direction(),
+                                         closest_sphere.value().specular,
+                                         lights,
+                                         scene_spheres);
+
+    bool is_reflective = closest_sphere.value().is_reflective();
+    double reflectiveness = closest_sphere.value().reflectiveness;
+
+    if (recursion_depth <= 0 || !is_reflective) {
+      return local_color;
+    }
+
+    auto reflected_ray = Ray(point_on_surface,
+                             reflect_ray(-ray.get_direction(), surface_normal));
+
+    Color reflected_color = trace_ray(reflected_ray,
+                                      scene_spheres,
+                                      lights,
+                                      0.001,
+                                      std::numeric_limits<double>::infinity(),
+                                      background_color,
+                                      recursion_depth - 1);
+
+    return local_color * (1 - reflectiveness) +
+           reflected_color * reflectiveness;
   }
 }
 
@@ -303,10 +331,10 @@ int main() {
   SceneOptions options;
   options.origin = {0.0, 0.0, 0.0};
 
-  Sphere red(1, 500, Point3{0.0, -1, 3}, Color{255, 0, 0});
-  Sphere blue(1, 500, Point3{2, 0.0, 4.0}, Color{0, 0, 255});
-  Sphere green(1, 10, Point3{-2, 0.0, 4.0}, Color{0, 255, 0});
-  Sphere large_yellow(5000, 1000, Point3{0, -5001, 0}, Color{255, 255, 0});
+  Sphere red(1, 500, 0.2, Point3{0.0, -1, 3}, Color{255, 0, 0});
+  Sphere blue(1, 500, 0.3, Point3{2, 0.0, 4.0}, Color{0, 0, 255});
+  Sphere green(1, 10, 0.4, Point3{-2, 0.0, 4.0}, Color{0, 255, 0});
+  Sphere large_yellow(5000, 1000, 0.5, Point3{0, -5001, 0}, Color{255, 255, 0});
 
   std::vector<Sphere> spheres{red, green, blue, large_yellow};
 
@@ -341,7 +369,13 @@ int main() {
     for (i64 y = height_start; y < height_end; y++) {
       Vec3 ray_direction = canvas_to_viewport(x, y, options);
       ray.set_ray_direction(ray_direction);
-      Color pixel_color = trace_ray(ray, spheres, lights, options);
+      Color pixel_color = trace_ray(ray,
+                                    spheres,
+                                    lights,
+                                    options.t_min,
+                                    options.t_max,
+                                    options.background_color,
+                                    3);
       canvas.put_pixel(x, y, pixel_color);
     }
   }

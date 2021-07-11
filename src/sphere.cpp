@@ -7,9 +7,22 @@
 Sphere::Sphere(double radius, const Point3& center, const Color& color)
     : radius(radius), center(center), color(color) {}
 
-Sphere::Sphere(double radius, i64 specular, const Point3& center,
+Sphere::Sphere(double radius,
+               i64 specular,
+               const Point3& center,
                const Color& color)
     : radius(radius), specular(specular), center(center), color(color) {}
+
+Sphere::Sphere(double radius,
+               i64 specular,
+               double reflectiveness,  // between 0 and 1
+               const Point3& center,
+               const Color& color)
+    : radius(radius),
+      specular(specular),
+      reflectiveness(reflectiveness),
+      center(center),
+      color(color) {}
 
 std::pair<std::optional<double>, std::optional<double>> Sphere::intersects_with(
     const Ray& ray) const {
@@ -38,3 +51,5 @@ std::pair<std::optional<double>, std::optional<double>> Sphere::intersects_with(
 
   return std::pair(t1, t2);
 }
+
+bool Sphere::is_reflective() const { return reflectiveness > 0.001; }
