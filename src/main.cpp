@@ -101,12 +101,13 @@ class PointLight : public Light {
  */
 class DirectionalLight : public Light {
  private:
-  double intensity{};
+  double intensity;
   Vec3 direction{};
 
  public:
   DirectionalLight(double intensity, const Vec3& direction)
-      : direction(direction) {}
+      : intensity(intensity), direction(direction) {}
+
 
   double compute_intensity_at(const Point3& point, const Vec3& normal,
                               const Vec3& view, i64 specular) const override {
